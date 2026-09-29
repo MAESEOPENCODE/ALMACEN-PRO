@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#1f3b5c">
 <title>Almacén</title>
+<link rel="manifest" href="manifest.webmanifest" type="application/manifest+json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+
 <style>
 :root{--hd:#1f3b5c;--bg:#eef1f4;--pn:#fff;--tx:#1d2733;--mu:#5d6b7a;--ln:#d3dae1;--ac:#2a7ab8;--sel:#dcebf7;--ok:#2f7d4f;--wr:#b26a00;--er:#b3261e;--th:#e6ebf0;
 box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -267,5 +273,6 @@ o.est='Lanzada';save();say(o.n+' lanzada: hay stock de todos los componentes. El
 function delOrd(i){var o=ords()[i];if(o.est==='Terminada')return say('Una orden terminada no se puede anular.','er');if(!confirm('¿Anular la orden '+o.n+'?'))return;ords().splice(i,1);save();draw()}
 load();draw();
 </script>
+<script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}</script>
 </body>
 </html>
