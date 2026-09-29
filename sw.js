@@ -1,21 +1,35 @@
-// Sube el número de versión cada vez que cambies index.html
-var V = 'almacen-v8';
-var FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
-self.addEventListener('install', function (e) {
-  e.waitUntil(caches.open(V).then(function (c) { return c.addAll(FILES); }).then(function () { return self.skipWaiting(); }));
+var V='almacen-v4';
+var ASSETS=['./','index.html','manifest.webmanifest','icon-192.png'];
+
+self.addEventListener('install',function(e){
+  e.waitUntil(caches.open(V).then(function(c){
+    return Promise.all(ASSETS.map(function(a){return c.add(a).catch(function(){})}));
+  }).then(function(){return self.skipWaiting()}));
 });
-self.addEventListener('activate', function (e) {
-  e.waitUntil(caches.keys().then(function (ks) {
-    return Promise.all(ks.filter(function (k) { return k !== V; }).map(function (k) { return caches.delete(k); }));
-  }).then(function () { return self.clients.claim(); }));
+
+self.addEventListener('activate',function(e){
+  e.waitUntil(caches.keys().then(function(ks){
+    return Promise.all(ks.filter(function(k){return k!==V}).map(function(k){return caches.delete(k)}));
+  }).then(function(){return self.clients.claim()}));
 });
-self.addEventListener('fetch', function (e) {
-  if (e.request.method !== 'GET') return;
-  e.respondWith(caches.match(e.request).then(function (r) {
-    return r || fetch(e.request).then(function (res) {
-      var copy = res.clone();
-      caches.open(V).then(function (c) { c.put(e.request, copy); });
+
+self.addEventListener('fetch',function(e){
+  var r=e.request;
+  if(r.method!=='GET'||new URL(r.url).origin!==location.origin)return;
+  var html=r.mode==='navigate'||/(^|\/)(index\.html)?$/.test(new URL(r.url).pathname);
+  if(html){
+    // Red primero: así cada versión nueva de index.html llega sola. Sin red, usa la copia guardada.
+    e.respondWith(fetch(r).then(function(res){
+      var cp=res.clone();caches.open(V).then(function(c){c.put(r,cp)});return res;
+    }).catch(function(){return caches.match(r).then(function(m){return m||caches.match('index.html')})}));
+    return;
+  }
+  // Resto de archivos: primero la copia guardada, y se refresca en segundo plano.
+  e.respondWith(caches.match(r).then(function(m){
+    var net=fetch(r).then(function(res){
+      if(res&&res.ok){var cp=res.clone();caches.open(V).then(function(c){c.put(r,cp)})}
       return res;
-    }).catch(function () { return caches.match('./index.html'); });
+    }).catch(function(){return m});
+    return m||net;
   }));
 });
