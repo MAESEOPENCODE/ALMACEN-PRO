@@ -75,7 +75,7 @@ function lines(){var m={},o=[];S.led.forEach(function(e){var k=e.it+'|'+e.lote+'
 m[k].q+=e.q;if(e.cad)m[k].cad=e.cad;if(e.prov)m[k].prov=e.prov});return o.filter(function(l){return Math.abs(l.q)>1e-9})}
 function est(l){if(S.blk[l.it+'|'+l.lote])return['Bloqueado','er'];if(l.cad&&l.cad<today)return['Caducado','er'];if(l.cad&&l.cad<=addD(30))return['Caduca pronto','wr'];return['Disponible','ok']}
 function v(id){var e=document.getElementById(id);return e?e.value.trim():''}
-function go(p){pg=p;flash=null;if(p!=='art')sel.ea=null;draw()}
+function go(p){pg=p;flash=null;if(p!=='art')sel.ea=null;if(p!=='prv')sel.pe=null;draw()}
 function say(t,k){flash={t:t,k:k};draw()}
 var NAV=[['inicio','Inicio'],['art','Artículos'],['prv','Proveedores'],['rec','Recepción'],['sal','Salida'],['exp','Expedición'],['pro','Producción'],['inv','Inventario'],['mrp','Planificación'],['mov','Movimientos'],['stk','Stock'],['tra','Trazabilidad'],['ret','Retirada'],['doc','Documentos']];
 function draw(){document.getElementById('nav').innerHTML=NAV.map(function(n){return'<a tabindex="0" class="'+(n[0]===pg?'on':'')+'" onclick="go(\''+n[0]+'\')" onkeydown="if(event.key===\'Enter\')go(\''+n[0]+'\')">'+n[1]+'</a>'}).join('');
@@ -122,8 +122,8 @@ var V=S.led.filter(function(e){return e.q<0&&e.t==='Venta'&&A.indexOf(e.it+'|'+e
 return o+'<p>Informe de retirada del '+fd(today)+'. Lote origen: <b>'+esc(item(p[0]).d)+' – '+esc(p.slice(1).join('|'))+'</b>'+(src.prov?', proveedor '+esc(src.prov):'')+(src.cad?', caducidad '+fd(src.cad):'')+'.</p>'+prvBox(src.prov)+'<h1>Lotes afectados</h1>'+
 tbl(['Artículo','Lote','Relación','Stock en almacén','Estado'],A.map(function(x){var q=x.split('|'),lo=q.slice(1).join('|'),s=L.filter(function(l){return l.it===q[0]&&l.lote===lo}).reduce(function(t,l){return t+l.q},0);return[item(q[0]).d,lo,x===k?'Lote origen':'Producido con el lote origen',num(s),'<span class="'+(S.blk[x]?'er':'wr')+'">'+(S.blk[x]?'Bloqueado':'Sin bloquear')+'</span>']}),[3])+
 '<h1>Clientes afectados</h1>'+(V.length?tbl(['Fecha','Doc.','Cliente o destino','Artículo','Lote','Cantidad'],V.map(function(e){return[fd(e.f),e.doc,e.dest,item(e.it).d,e.lote,num(-e.q)]}),[5]):'<div class="sc">'+empty('Ninguno de estos lotes se ha vendido.')+'</div>')},
-prv:function(){var N=Object.keys(S.prov).sort();
-return'<h1>Proveedores</h1><details open><summary>Nuevo o modificar proveedor</summary><div class="g"><label>Nombre<input id="v-n"></label><label>Persona de contacto<input id="v-c"></label><label>Teléfono<input id="v-t" type="tel"></label><label>Correo<input id="v-e" type="email"></label></div><div style="padding:0 12px 12px"><button class="p" onclick="addPrv()">Guardar proveedor</button></div></details>'+(N.length?tbl(['Nombre','Contacto','Teléfono','Correo','Acción'],N.map(function(n){var p=S.prov[n];return[n,p.c,p.t,p.e,'<button onclick="delPrv(\''+esc(n)+'\')">Quitar</button>']}),[]):'<div class="sc">'+empty('Aún no hay proveedores.')+'</div>')},
+prv:function(){var N=Object.keys(S.prov).sort(),pe=sel.pe,ed=pe?S.prov[pe]:{c:'',t:'',e:''};
+return'<h1>Proveedores</h1><details open><summary>'+(pe?'Editando '+esc(pe):'Nuevo proveedor')+'</summary><div class="g"><label>Nombre<input id="v-n" value="'+esc(pe||'')+'"></label><label>Persona de contacto<input id="v-c" value="'+esc(ed.c||'')+'"></label><label>Teléfono<input id="v-t" type="tel" value="'+esc(ed.t||'')+'"></label><label>Correo<input id="v-e" type="email" value="'+esc(ed.e||'')+'"></label></div><div style="padding:0 12px 12px"><button class="p" id="v-b" onclick="addPrv()">'+(pe?'Guardar cambios':'Guardar proveedor')+'</button>'+(pe?' <button onclick="sel.pe=null;draw()">Cancelar</button>':'')+'</div></details>'+(N.length?tbl(['Nombre','Contacto','Teléfono','Correo','Acción'],N.map(function(n){var p=S.prov[n];return[n,p.c,p.t,p.e,'<button onclick="editPrv(\''+esc(n)+'\')">Editar</button> <button onclick="delPrv(\''+esc(n)+'\')">Quitar</button>']}),[]):'<div class="sc">'+empty('Aún no hay proveedores.')+'</div>')},
 doc:function(){var D=[];S.led.forEach(function(e){if(D.indexOf(e.doc)<0)D.push(e.doc)});D.reverse();var d=sel.dc||'';
 var o='<h1>Hojas de documento</h1><div class="rb np"><label style="width:320px">Documento<select onchange="sel.dc=this.value;draw()"><option value="">Elegir documento…</option>'+opts(D.map(function(x){return[x,x]}),d)+'</select></label>'+(d?'<button class="p" onclick="window.print()">Imprimir hoja</button>':'')+'</div>';
 if(!d)return o+'<div class="sc">'+empty(D.length?'Elige un documento para ver su hoja imprimible.':'Aún no hay documentos.')+'</div>';
@@ -236,7 +236,12 @@ ch.forEach(function(c){S.led.push({n:S.led.length+1,f:today,t:'Ajuste',doc:doc,i
 function afect(k,seen){seen=seen||[];if(seen.indexOf(k)>-1)return seen;seen.push(k);var p=k.split('|'),it=p[0],lo=p.slice(1).join('|');
 S.led.forEach(function(e){if(e.it===it&&e.lote===lo&&e.q<0&&e.op)S.led.forEach(function(o){if(o.op===e.op&&o.t==='Producción')afect(o.it+'|'+o.lote,seen)})});return seen}
 function blkAll(){afect(sel.rk).forEach(function(x){S.blk[x]=true});save();say('Lotes afectados bloqueados.','ok')}
-function addPrv(){var n=v('v-n');if(!n)return say('Indica el nombre del proveedor.','er');S.prov[n]={c:v('v-c'),t:v('v-t'),e:v('v-e')};save();say('Proveedor guardado.','ok')}
+function addPrv(){var n=v('v-n');if(!n)return say('Indica el nombre del proveedor.','er');
+var old=sel.pe,data={c:v('v-c'),t:v('v-t'),e:v('v-e')};
+if(old&&old!==n&&S.prov[n])return say('Ya existe un proveedor con ese nombre.','er');
+if(old&&old!==n){delete S.prov[old];S.led.forEach(function(e){if(e.prov===old)e.prov=n});S.demoIds&&S.demoIds.prov&&(S.demoIds.prov=S.demoIds.prov.map(function(x){return x===old?n:x}))}
+S.prov[n]=data;sel.pe=null;save();say(old?'Proveedor actualizado.':'Proveedor guardado.','ok')}
+function editPrv(n){sel.pe=n;draw();window.scrollTo(0,0)}
 function delPrv(n){delete S.prov[n];save();draw()}
 function setMin(id,x){if(x==='')delete S.min[id];else S.min[id]=parseFloat(x);save()}
 function prvBox(n){var p=S.prov[n];if(!n)return'';if(!p)return'<p>No hay datos de contacto de '+esc(n)+'. Añádelos en Proveedores.</p>';
