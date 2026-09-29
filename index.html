@@ -21,6 +21,7 @@ html{scroll-padding-top:env(safe-area-inset-top,0px)}
 body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.4 "Segoe UI",system-ui,-apple-system,sans-serif}
 header{background:var(--hd);color:#fff;padding:10px 16px;display:flex;align-items:center;gap:12px}
 header b{font-size:17px;font-weight:600}header span{opacity:.7;font-size:13px}
+header button{background:#fff;color:var(--hd);border:none;font-weight:600;padding:6px 14px;border-radius:3px;white-space:nowrap}
 .wrap{display:flex;min-height:calc(100vh - 44px)}
 nav{width:190px;flex:none;background:var(--pn);border-right:1px solid var(--ln);padding:8px 0}
 nav a{display:block;padding:9px 16px;color:var(--tx);text-decoration:none;border-left:3px solid transparent;cursor:pointer}
@@ -53,14 +54,16 @@ tr.cl{cursor:pointer}tr.cl:hover td{background:var(--sel)}
 </style>
 </head>
 <body>
-<header><b>Almacén</b><span>Recepción, stock y trazabilidad</span></header>
+<header><b>Almacén</b><span>Recepción, stock y trazabilidad</span><button id="ib" style="display:none;margin-left:auto" onclick="doInstall()">Instalar app</button></header>
+<div id="iosb" style="display:none;background:#fff3cd;color:#664d03;padding:8px 14px;font-size:13px;text-align:center">Para instalarla en este iPhone/iPad: toca el icono de compartir (el cuadrado con la flecha hacia arriba) y luego "Añadir a pantalla de inicio".</div>
 <div class="wrap"><nav id="nav"></nav><main id="m"></main></div>
 <div id="scn" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);align-items:center;justify-content:center;flex-direction:column;gap:12px;z-index:9"><video id="vd" playsinline muted style="max-width:92%;max-height:70%"></video><button onclick="stopScan()">Cancelar</button></div>
 <script>
 var S,pg='inicio',flash=null,tr=null,sel={};
 var today=new Date().toISOString().slice(0,10);
 function load(){try{S=JSON.parse(localStorage.getItem('alm')||'null')}catch(e){S=null}
-if(!S)S={items:[],led:[],blk:{},n:{REC:0,SAL:0,OP:0}};S.bom=S.bom||{};S.bomv=S.bomv||{};S.prov=S.prov||{};S.min=S.min||{};S.n.OP=S.n.OP||0}
+if(!S)S={items:[],led:[],blk:{},n:{REC:0,SAL:0,OP:0}};S.bom=S.bom||{};S.bomv=S.bomv||{};S.prov=S.prov||{};S.min=S.min||{};S.n.OP=S.n.OP||0;
+if(!S.seeded&&!S.items.length){S.seeded=true;demo(true)}}
 function save(){try{localStorage.setItem('alm',JSON.stringify(S))}catch(e){}}
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
 function pad(n,l){return String(n).padStart(l||4,'0')}
@@ -83,7 +86,7 @@ function empty(t){return'<div class="mt">'+t+'</div>'}
 var PG={
 inicio:function(){var L=lines().filter(function(l){return l.q>0}),ex=L.filter(function(l){return l.cad&&l.cad<today}),so=L.filter(function(l){return l.cad&&l.cad>=today&&l.cad<=addD(30)}),bl=L.filter(function(l){return S.blk[l.it+'|'+l.lote]});
 var lst=L.filter(function(l){return est(l)[1]!=='ok'});
-return'<h1>Inicio</h1><div class="rb"><button onclick="demo()">Cargar datos de ejemplo</button><button onclick="if(confirm(\'¿Borrar todos los datos?\')){localStorage.removeItem(\'alm\');load();go(\'inicio\')}">Borrar todo</button></div>'+
+return'<h1>Inicio</h1><div class="rb"><button onclick="demo()">Cargar datos de ejemplo</button><button onclick="quitarDemo()">Quitar datos de ejemplo</button><button onclick="if(confirm(\'¿Borrar todos los datos?\')){localStorage.removeItem(\'alm\');load();go(\'inicio\')}">Borrar todo</button></div>'+
 '<div class="kp"><div><b>'+S.items.length+'</b>Artículos</div><div><b>'+L.length+'</b>Líneas de stock</div><div><b class="wr">'+so.length+'</b>Caducan en 30 días</div><div><b class="er">'+(ex.length+bl.length)+'</b>Caducados o bloqueados</div></div>'+
 alertas()+bkp()+'<h1>Lotes que requieren atención</h1>'+(lst.length?tbl(['Artículo','Lote','Ubicación','Cantidad','Caducidad','Estado'],lst.map(function(l){var e=est(l);return[item(l.it).d,l.lote,l.ub,num(l.q),fd(l.cad),'<span class="'+e[1]+'">'+e[0]+'</span>']}),[3]):'<div class="sc">'+empty('Nada que revisar.')+'</div>')},
 art:function(){var st={};lines().forEach(function(l){st[l.it]=(st[l.it]||0)+l.q});
@@ -173,17 +176,24 @@ var i=k.lastIndexOf('|'),lote=k.slice(0,i),ub=k.slice(i+1),l=lines().filter(func
 if(!l||q>l.q+1e-9)return say('No hay stock suficiente en ese lote.','er');
 var doc='SAL-'+pad(++S.n.SAL);S.led.push({n:S.led.length+1,f:today,t:v('s-t'),doc:doc,it:id,lote:lote,q:-q,ub:ub,dest:v('s-d')});save();say(doc+' registrada.','ok')}
 function blk(k){if(S.blk[k])delete S.blk[k];else S.blk[k]=true;save();draw()}
-function demo(){if(S.items.length&&!confirm('Se añadirán datos de ejemplo. ¿Continuar?'))return;
+function demo(silent){if(!silent&&S.items.length&&!confirm('Se añadirán datos de ejemplo. ¿Continuar?'))return;
 var a=[['Tomate triturado','Materia prima','kg','LOTE-CAD','8'],['Aceite de oliva virgen extra','Materia prima','l','LOTE-CAD','25'],['Tetra Brik 1 l','Envase','ud','LOTE',''],['Gazpacho 1 l','Producto terminado','ud','LOTE-CAD','']],b=S.items.reduce(function(m,i){return Math.max(m,parseInt(i.id.slice(3))||0)},0);
-a.forEach(function(x,j){S.items.push({id:'ART'+pad(b+j+1),d:x[0],t:x[1],u:x[2],s:x[3],m:x[4]})});
-function r(j,l,q,ub,pv,c,t){S.led.push({n:S.led.length+1,f:today,t:'Compra',doc:'REC-'+pad(++S.n.REC),it:'ART'+pad(b+j+1),lote:l,q:q,ub:ub,prov:pv,cad:c,temp:t})}
+var ids=a.map(function(x,j){return'ART'+pad(b+j+1)}),docs=[];
+a.forEach(function(x,j){S.items.push({id:ids[j],d:x[0],t:x[1],u:x[2],s:x[3],m:x[4]})});
+function r(j,l,q,ub,pv,c,t){var d='REC-'+pad(++S.n.REC);docs.push(d);S.led.push({n:S.led.length+1,f:today,t:'Compra',doc:d,it:ids[j],lote:l,q:q,ub:ub,prov:pv,cad:c,temp:t})}
 r(0,'T-2609',800,'Cámara 1','Conservas Vega',addD(20),'4');r(0,'T-2611',600,'Cámara 1','Conservas Vega',addD(75),'5');r(1,'A-0417',200,'Seco A','Aceites del Sur',addD(200),'');r(2,'TB-88',5000,'Seco A','Envases Iberia','','');
-S.led.push({n:S.led.length+1,f:today,t:'Consumo producción',doc:'SAL-'+pad(++S.n.SAL),it:'ART'+pad(b+1),lote:'T-2609',q:-300,ub:'Cámara 1',dest:'OP gazpacho 1 l'});var op='OP-'+pad(++S.n.OP),g='ART'+pad(b+4);
-[[b+1,'T-2609',60,'Cámara 1'],[b+2,'A-0417',2,'Seco A'],[b+3,'TB-88',100,'Seco A']].forEach(function(x){S.led.push({n:S.led.length+1,f:today,t:'Consumo producción',doc:op,op:op,it:'ART'+pad(x[0]),lote:x[1],q:-x[2],ub:x[3],dest:'Lote G-0926 (Gazpacho 1 l)'})});
+var d1='SAL-'+pad(++S.n.SAL);docs.push(d1);S.led.push({n:S.led.length+1,f:today,t:'Consumo producción',doc:d1,it:ids[0],lote:'T-2609',q:-300,ub:'Cámara 1',dest:'OP gazpacho 1 l'});
+var op='OP-'+pad(++S.n.OP),g=ids[3];docs.push(op);
+[[0,'T-2609',60,'Cámara 1'],[1,'A-0417',2,'Seco A'],[2,'TB-88',100,'Seco A']].forEach(function(x){S.led.push({n:S.led.length+1,f:today,t:'Consumo producción',doc:op,op:op,it:ids[x[0]],lote:x[1],q:-x[2],ub:x[3],dest:'Lote G-0926 (Gazpacho 1 l)'})});
 S.led.push({n:S.led.length+1,f:today,t:'Producción',doc:op,op:op,it:g,lote:'G-0926',q:100,ub:'Cámara 1',cad:addD(45),prov:'Producción '+op});
-S.led.push({n:S.led.length+1,f:today,t:'Venta',doc:'SAL-'+pad(++S.n.SAL),it:g,lote:'G-0926',q:-40,ub:'Cámara 1',dest:'Mercadona Córdoba'});
-S.prov['Conservas Vega']={c:'Marta López',t:'957 000 111',e:'pedidos@conservasvega.example'};S.prov['Aceites del Sur']={c:'Pedro Ruiz',t:'957 000 222',e:'ventas@aceitesdelsur.example'};S.min['ART'+pad(b+1)]=1200;S.min['ART'+pad(b+2)]=250;
-S.bomv['ART'+pad(b+4)]=[{ver:1,est:'Certificada',base:1,centro:'Línea de envasado',prep:20,perU:0.03,comps:[{it:'ART'+pad(b+1),q:0.6,m:0},{it:'ART'+pad(b+2),q:0.02,m:0},{it:'ART'+pad(b+3),q:1,m:0}]}];save();say('Datos de ejemplo cargados.','ok')}
+var d2='SAL-'+pad(++S.n.SAL);docs.push(d2);S.led.push({n:S.led.length+1,f:today,t:'Venta',doc:d2,it:g,lote:'G-0926',q:-40,ub:'Cámara 1',dest:'Mercadona Córdoba'});
+var pv=['Conservas Vega','Aceites del Sur'];S.prov['Conservas Vega']={c:'Marta López',t:'957 000 111',e:'pedidos@conservasvega.example'};S.prov['Aceites del Sur']={c:'Pedro Ruiz',t:'957 000 222',e:'ventas@aceitesdelsur.example'};S.min[ids[0]]=1200;S.min[ids[1]]=250;
+S.bomv[ids[3]]=[{ver:1,est:'Certificada',base:1,centro:'Línea de envasado',prep:20,perU:0.03,comps:[{it:ids[0],q:0.6,m:0},{it:ids[1],q:0.02,m:0},{it:ids[2],q:1,m:0}]}];
+S.demoIds={items:ids,docs:docs,prov:pv};save();if(!silent)say('Datos de ejemplo cargados.','ok')}
+function quitarDemo(){if(!S.demoIds)return say('No hay datos de ejemplo cargados.','er');if(!confirm('¿Quitar los datos de ejemplo? Esto no afecta a tus artículos y movimientos propios.'))return;
+var D=S.demoIds;S.items=S.items.filter(function(i){return D.items.indexOf(i.id)<0});S.led=S.led.filter(function(e){return D.docs.indexOf(e.doc)<0});
+D.items.forEach(function(id){delete S.min[id];delete S.bomv[id]});D.prov.forEach(function(n){delete S.prov[n]});
+delete S.demoIds;save();say('Datos de ejemplo quitados.','ok')}
 function boms(p){S.bomv=S.bomv||{};if(!S.bomv[p]&&S.bom&&S.bom[p]){S.bomv[p]=[{ver:1,est:'Certificada',base:bs(p),comps:S.bom[p]}];delete S.bom[p];save()}S.bomv[p]=S.bomv[p]||[];return S.bomv[p]}
 function certVer(p){var V=boms(p);for(var i=V.length-1;i>=0;i--)if(V[i].est==='Certificada')return V[i];return null}
 function devVer(p){var V=boms(p);for(var i=V.length-1;i>=0;i--)if(V[i].est==='En desarrollo')return V[i];return null}
@@ -271,6 +281,13 @@ function launchOrd(i){var o=ords()[i],cv=certVer(o.it);if(!cv)return say('Este p
 for(var k=0;k<cv.comps.length;k++){if(!pick(cv.comps[k].it,cv.comps[k].q*(1+(cv.comps[k].m||0)/100)*o.q/cv.base))return say('No hay stock disponible suficiente de '+item(cv.comps[k].it).d+'.','er')}
 o.est='Lanzada';save();say(o.n+' lanzada: hay stock de todos los componentes. El stock no queda reservado hasta terminarla.','ok')}
 function delOrd(i){var o=ords()[i];if(o.est==='Terminada')return say('Una orden terminada no se puede anular.','er');if(!confirm('¿Anular la orden '+o.n+'?'))return;ords().splice(i,1);save();draw()}
+var deferredPrompt=null;
+window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();deferredPrompt=e;var b=document.getElementById('ib');if(b)b.style.display='inline-block'});
+window.addEventListener('appinstalled',function(){var b=document.getElementById('ib');if(b)b.style.display='none';deferredPrompt=null});
+function doInstall(){if(!deferredPrompt)return;deferredPrompt.prompt();deferredPrompt.userChoice.then(function(){deferredPrompt=null;document.getElementById('ib').style.display='none'})}
+(function(){var ua=navigator.userAgent||'';var iOS=/iPad|iPhone|iPod/.test(ua)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+var standalone=window.navigator.standalone===true||window.matchMedia('(display-mode: standalone)').matches;
+if(iOS&&!standalone){var el=document.getElementById('iosb');if(el)el.style.display='block'}})();
 load();draw();
 </script>
 <script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}</script>
