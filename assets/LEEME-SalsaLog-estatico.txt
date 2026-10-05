@@ -1,0 +1,9 @@
+SalsaLog · Operaciones — sitio estático/PWA listo para subir
+
+Extrae y sube TODOS los archivos juntos a la carpeta publicada de GitHub Pages; no subas el ZIP. Conserva index.html, assets/, manifest.webmanifest, sw.js, icon-180.png, icon-192.png, icon-512.png, salsa-log-mark.svg y manus-routes.json. Las rutas relativas funcionan bajo /ALMACEN-PRO/.
+
+En cada artículo se indica Formato (brick, botella, cubo, etc.), Contenido por unidad (ej. 1 L o 500 ml) y Unidades por caja. Las cajas estándar/palet del artículo son una referencia. En cada palet se indica el número real de cajas por línea; el tipo de palet no impone un máximo fijo de cajas. Se conserva la tara y el peso bruto máximo para cálculo y aviso de sobrepeso. Lote y caducidad se capturan en el palet y se reflejan en el pedido.
+
+En Android/navegadores compatibles puede aparecer «Instalar app». En iPhone/iPad: Compartir → Añadir a pantalla de inicio. Abre el sitio una vez con conexión para registrar el service worker.
+
+Los datos se guardan en el navegador. Para copiar el JSON, usa Maestros → Datos y copias → Guardar copia en el móvil. Es una copia manual; no sincroniza dispositivos.
