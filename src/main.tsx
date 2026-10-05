@@ -9,7 +9,6 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   </React.StrictMode>,
 );
 
-if ("serviceWorker" in navigator) {
   const wasAlreadyControlled = Boolean(navigator.serviceWorker.controller);
   let reloadedForUpdate = false;
 
