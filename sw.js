@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "salsalog-pwa-";
-const CACHE_NAME = `${CACHE_PREFIX}v1`;
+const CACHE_NAME = `${CACHE_PREFIX}ee38979e3b9d45e6`;
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -16,7 +16,7 @@ async function cacheUrl(cache, url) {
     const response = await fetch(url, { cache: "reload" });
     if (response.ok) await cache.put(url, response);
   } catch {
-    // Los recursos se volverán a solicitar cuando haya conexión.
+    // El recurso se intentará descargar de nuevo en la próxima apertura online.
   }
 }
 
@@ -26,8 +26,7 @@ self.addEventListener("install", (event) => {
     const shellUrls = APP_SHELL.map((path) => new URL(path, self.registration.scope).href);
     await Promise.all(shellUrls.map((url) => cacheUrl(cache, url)));
 
-    // El HTML publicado contiene los nombres hash actuales de CSS y JavaScript.
-    // Precargarlos evita que la primera apertura instalada dependa de una segunda visita online.
+    // Precarga el HTML actual y sus bundles con hash para la primera apertura offline.
     try {
       const appUrl = new URL("./", self.registration.scope).href;
       const response = await fetch(appUrl, { cache: "reload" });
@@ -42,6 +41,7 @@ self.addEventListener("install", (event) => {
     } catch {
       // La navegación online volverá a poblar el caché del shell.
     }
+
     await self.skipWaiting();
   })());
 });
@@ -59,40 +59,34 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   if (request.method !== "GET") return;
+
   const requestUrl = new URL(request.url);
   if (requestUrl.origin !== self.location.origin) return;
 
-  const appDocument = request.mode === "navigate" || ["index.html", "manifest.webmanifest", "manus-routes.json"].includes(requestUrl.pathname.split("/").pop());
-  if (appDocument) {
-    event.respondWith((async () => {
-      try {
-        const response = await fetch(request);
-        if (response.ok) {
-          const cache = await caches.open(CACHE_NAME);
-          await cache.put(request, response.clone());
-        }
-        return response;
-      } catch {
-        return (await caches.match(request))
-          || (await caches.match(new URL("./", self.registration.scope).href))
-          || new Response("SalsaLog está sin conexión. Vuelve a intentarlo cuando haya red.", { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" } });
-      }
-    })());
-    return;
-  }
+  const isAppDocument = request.mode === "navigate"
+    || ["index.html", "manifest.webmanifest", "manus-routes.json"].includes(requestUrl.pathname.split("/").pop());
 
   event.respondWith((async () => {
     const cached = await caches.match(request);
-    if (cached) return cached;
+
     try {
-      const response = await fetch(request);
+      // No aceptar una copia antigua del caché HTTP del navegador/CDN.
+      const response = await fetch(request, { cache: "no-cache" });
       if (response.ok) {
         const cache = await caches.open(CACHE_NAME);
         await cache.put(request, response.clone());
       }
       return response;
     } catch {
-      return new Response("Recurso no disponible sin conexión.", { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+      if (cached) return cached;
+      if (isAppDocument) {
+        const appShell = await caches.match(new URL("./", self.registration.scope).href);
+        if (appShell) return appShell;
+      }
+      return new Response(
+        isAppDocument ? "SalsaLog está sin conexión. Vuelve a intentarlo cuando haya red." : "Recurso no disponible sin conexión.",
+        { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" } },
+      );
     }
   })());
 });
