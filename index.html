@@ -18,6 +18,11 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      function showErr(m){var d=document.createElement('pre');d.style.cssText='padding:12px;margin:0;color:#b00020;white-space:pre-wrap;font:13px monospace;background:#fff';d.textContent='ERROR: '+m;document.body.appendChild(d);}
+      window.addEventListener('error',function(e){showErr((e.message||'')+' '+(e.filename||'')+':'+(e.lineno||''));});
+      window.addEventListener('unhandledrejection',function(e){showErr(String(e.reason&&e.reason.stack||e.reason));});
+    </script>
     <script type="module" src="./src/main.tsx"></script>
   </body>
 </html>
