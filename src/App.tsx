@@ -535,7 +535,6 @@ export default function App() {
   </div>;
 
   function LayersIcon() { return <span className="stacked-icon"><Boxes size={16} /></span>; }
-  function RotateIcon() { return <span className="rotate-glyph">↻</span>; }
   function PalletDetail({ pallet, data, onLabel, onExtract, movements }: { pallet: Pallet; data: AppData; onLabel: () => void; onExtract: () => void; movements: Movement[] }) {
     const order = data.orders.find((item) => item.id === pallet.orderId); const type = data.palletTypes.find((item) => item.id === pallet.typeId);
     const canExtract = pallet.status === "DISPONIBLE" && pallet.lines.some((line) => line.boxes > 0) && !allDraftPalletIds.includes(pallet.id);
