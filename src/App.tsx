@@ -580,7 +580,7 @@ function OperatorWorkspace({ data, onOpenPallet, onPreparePallet, onLoad, onGoPa
   </div>;
 }
 
-function LoadWorkspace({ data, load, allDraftIds, manualPalletId, setManualPalletId, onBack, onAddPallet, onAddOrder, onRemove, onMove, onClose, onPacking, onPallet }: { data: AppData; load: Load; allDraftIds: string[]; manualPalletId: string; setManualPalletId: (id: string) => void; onBack: () => void; onAddPallet: (id: string) => void; onAddOrder: (id: string) => void; onRemove: (id: string) => void; onMove: (index: number, offset: number) => void; onClose: () => void; onUpdate: (patch: Partial<Load>) => void; onPacking: () => void; onPallet: (id: string) => void }) {
+function LoadWorkspace({ data, load, allDraftIds, manualPalletId, setManualPalletId, onBack, onAddPallet, onAddOrder, onRemove, onMove, onClose, onUpdate, onPacking, onPallet }: { data: AppData; load: Load; allDraftIds: string[]; manualPalletId: string; setManualPalletId: (id: string) => void; onBack: () => void; onAddPallet: (id: string) => void; onAddOrder: (id: string) => void; onRemove: (id: string) => void; onMove: (index: number, offset: number) => void; onClose: () => void; onUpdate: (patch: Partial<Load>) => void; onPacking: () => void; onPallet: (id: string) => void }) {
   const pallets = load.palletIds.map((id) => data.pallets.find((pallet) => pallet.id === id)).filter((item): item is Pallet => Boolean(item));
   const orders = data.orders.filter((order) => data.pallets.some((pallet) => pallet.orderId === order.id && ["DISPONIBLE", "RESERVADO"].includes(pallet.status) && pallet.lines.length > 0));
   const occupiedElsewhere = data.loads.filter((item) => item.status === "BORRADOR" && item.id !== load.id).flatMap((item) => item.palletIds);
