@@ -1,0 +1,28 @@
+{
+  "name": "almacen-pro",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "packageManager": "pnpm@11.25.0",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 3000",
+    "build": "tsc -b && vite build && node scripts/version-sw.mjs",
+    "preview": "vite preview --host 0.0.0.0 --port 3000",
+    "start": "vite --host 0.0.0.0 --port 3000",
+    "local": "vite --host 127.0.0.1 --port 3000"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "5.0.4",
+    "jsbarcode": "3.12.1",
+    "lucide-react": "0.468.0",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "vite": "6.0.7"
+  },
+  "devDependencies": {
+    "@types/jsbarcode": "3.11.3",
+    "@types/react": "19.0.3",
+    "@types/react-dom": "19.0.2",
+    "typescript": "5.7.2"
+  }
+}
