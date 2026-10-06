@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { AppData, Article, Carrier, Customer, Order, OrderLine, Pallet, PalletLine, PalletType } from "../types";
+import type { AppData, Article, Carrier, Customer, Load, Order, OrderLine, Pallet, PalletLine, PalletType } from "../types";
 import { netWeight } from "../utils/calculations";
 import { makeId } from "../utils/ids";
 import type { ConfirmOptions } from "./ConfirmDialog";
@@ -106,6 +106,34 @@ export function PalletForm({ data, onCancel, onSubmit, onConfirm, defaultOrderId
   </form>;
 }
 
+export function PalletEditForm({ data, pallet, onCancel, onSubmit }: { data: AppData; pallet: Pallet; onCancel: () => void; onSubmit: (changes: { typeId: string; location: string; notes: string; lines: PalletLine[] }) => void }) {
+  const [typeId, setTypeId] = useState(pallet.typeId);
+  const [location, setLocation] = useState(pallet.location);
+  const [notes, setNotes] = useState(pallet.notes ?? "");
+  const [lines, setLines] = useState<PalletLine[]>(pallet.lines);
+  const locations = data.locations.includes(location) ? data.locations : [location, ...data.locations];
+  const update = (index: number, patch: Partial<PalletLine>) => setLines((items) => items.map((item, at) => at === index ? { ...item, ...patch } : item));
+  return <form onSubmit={(event) => { event.preventDefault(); onSubmit({ typeId, location, notes, lines: lines.filter((line) => line.boxes > 0) }); }}>
+    <div className="form-grid">
+      <Field label="Tipo de palet"><select value={typeId} onChange={(event) => setTypeId(event.target.value)}>{data.palletTypes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
+      <Field label="Ubicación"><select value={location} onChange={(event) => setLocation(event.target.value)}>{locations.map((item) => <option key={item} value={item}>{item}</option>)}</select></Field>
+      <Field label="Notas"><input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Observaciones del palet" /></Field>
+    </div>
+    <div className="line-editor-head"><div><strong>Contenido del palet</strong><span> Lote, caducidad y cajas</span></div></div>
+    <div className="pallet-lines">
+      {lines.map((line, index) => { const article = data.articles.find((item) => item.id === line.articleId); return <div className="pallet-line-row" key={line.id}>
+        <strong>{article ? `${article.sku} · ${article.name}` : "Artículo"}</strong>
+        <input aria-label="Lote" required value={line.lot} onChange={(event) => update(index, { lot: event.target.value })} placeholder="Lote" />
+        <input aria-label="Caducidad" type="date" value={line.expiry ?? ""} onChange={(event) => update(index, { expiry: event.target.value })} />
+        <input aria-label="Cajas" type="number" min="1" step="1" required value={line.boxes} onChange={(event) => update(index, { boxes: Number(event.target.value) })} />
+        <button className="icon-button danger-text" aria-label="Quitar línea" type="button" onClick={() => setLines((items) => items.filter((_, at) => at !== index))} disabled={lines.length <= 1}>×</button>
+      </div>; })}
+    </div>
+    <p className="subtle-note">Si cambias lote, caducidad o cajas, la etiqueta sube de revisión y hay que volver a imprimirla.</p>
+    <Actions onCancel={onCancel} label="Guardar cambios" />
+  </form>;
+}
+
 export function ExtractForm({ data, pallet, onCancel, onSubmit }: { data: AppData; pallet: Pallet; onCancel: () => void; onSubmit: (result: { lineId: string; boxes: number; targetPalletId: string; orderId: string; location: string }) => void }) {
   const [lineId, setLineId] = useState(pallet.lines.find((line) => line.boxes > 0)?.id ?? "");
   const [boxes, setBoxes] = useState(1);
@@ -149,6 +177,25 @@ export function LoadForm({ data, onCancel, onSubmit }: { data: AppData; onCancel
       <Field label="Observaciones"><input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Indicaciones para la carga" /></Field>
     </div>
     <Actions onCancel={onCancel} label="Crear carga" />
+  </form>;
+}
+
+export function LoadEditForm({ data, load, onCancel, onSubmit }: { data: AppData; load: Load; onCancel: () => void; onSubmit: (patch: { carrierId?: string; vehicleId?: string; dock: string; departureAt: string; notes: string }) => void }) {
+  const [carrierId, setCarrierId] = useState(load.carrierId ?? "");
+  const [vehicleId, setVehicleId] = useState(load.vehicleId ?? "");
+  const [dock, setDock] = useState(load.dock ?? "");
+  const [departureAt, setDepartureAt] = useState(load.departureAt);
+  const [notes, setNotes] = useState(load.notes ?? "");
+  const vehicles = data.vehicles.filter((vehicle) => !carrierId || vehicle.carrierId === carrierId);
+  return <form onSubmit={(event) => { event.preventDefault(); onSubmit({ carrierId: carrierId || undefined, vehicleId: vehicleId || undefined, dock: dock.trim(), departureAt, notes: notes.trim() }); }}>
+    <div className="form-grid">
+      <Field label="Transportista"><select value={carrierId} onChange={(event) => { setCarrierId(event.target.value); setVehicleId(""); }}><option value="">Seleccionar transportista</option>{data.carriers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
+      <Field label="Matrícula"><select value={vehicleId} onChange={(event) => setVehicleId(event.target.value)}><option value="">Seleccionar vehículo</option>{vehicles.map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.plate} · {vehicle.maxWeightKg.toLocaleString("es-ES")} kg</option>)}</select></Field>
+      <Field label="Muelle"><input value={dock} onChange={(event) => setDock(event.target.value)} /></Field>
+      <Field label="Salida prevista"><input type="datetime-local" required value={departureAt} onChange={(event) => setDepartureAt(event.target.value)} /></Field>
+      <Field label="Observaciones"><input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Indicaciones para la carga" /></Field>
+    </div>
+    <Actions onCancel={onCancel} label="Guardar cambios" />
   </form>;
 }
 
