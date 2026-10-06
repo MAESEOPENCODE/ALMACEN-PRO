@@ -185,6 +185,23 @@ export default function App() {
   useEffect(() => { try { setSaved(false); writeData(data); setSaved(true); } catch { setSaved(false); } }, [data]);
   useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(null), 4200); return () => window.clearTimeout(timer); }, [toast]);
   useEffect(() => {
+    let leaving = false;
+    history.pushState({ almacenGuard: true }, "");
+    const onPop = async () => {
+      if (leaving) return;
+      history.pushState({ almacenGuard: true }, "");
+      const exit = await askConfirmation({ title: "Salir de la aplicación", message: "¿Quieres salir de Almacén?", details: "Tus datos quedan guardados en este dispositivo.", confirmLabel: "Salir", tone: "danger" });
+      if (!exit) return;
+      leaving = true;
+      window.close();
+      window.setTimeout(() => history.go(-2), 150);
+    };
+    const onBeforeUnload = (event: BeforeUnloadEvent) => { if (leaving) return; event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("popstate", onPop);
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => { window.removeEventListener("popstate", onPop); window.removeEventListener("beforeunload", onBeforeUnload); };
+  }, [askConfirmation]);
+  useEffect(() => {
     const isStandalone = window.matchMedia("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
     const userAgent = navigator.userAgent;
     const isIos = /iPad|iPhone|iPod/.test(userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
