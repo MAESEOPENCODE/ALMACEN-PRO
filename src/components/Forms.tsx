@@ -43,7 +43,7 @@ export function OrderForm({ data, initial, onCancel, onSubmit }: { data: AppData
 
 type PalletDraft = Omit<Pallet, "id" | "code" | "createdAt" | "labelRevision">;
 export function PalletForm({ data, onCancel, onSubmit, onConfirm, defaultOrderId }: { data: AppData; onCancel: () => void; onSubmit: (pallet: PalletDraft) => void | Promise<void>; onConfirm: (options: ConfirmOptions) => Promise<boolean>; defaultOrderId?: string }) {
-  const [assignment, setAssignment] = useState<"stock" | "order" | "customer">(defaultOrderId ? "order" : "stock");
+  const [assignment, setAssignment] = useState<"stock" | "bricks" | "order" | "customer">(defaultOrderId ? "order" : "stock");
   const [orderId, setOrderId] = useState(defaultOrderId ?? "");
   const [customerId, setCustomerId] = useState("");
   const [typeId, setTypeId] = useState(data.palletTypes[0]?.id ?? "");
@@ -59,8 +59,10 @@ export function PalletForm({ data, onCancel, onSubmit, onConfirm, defaultOrderId
     const defaults = makeLine(articleId);
     setLines((items) => items.map((item, at) => at === index ? { ...item, articleId: defaults.articleId, format: defaults.format, packSize: defaults.packSize, unitsPerBox: defaults.unitsPerBox, netKgPerBox: defaults.netKgPerBox } : item));
   };
+  const bricksMode = assignment === "bricks";
+  const toUnits = (line: Omit<PalletLine, "id">) => ({ ...line, unitsPerBox: 1, netKgPerBox: Number(line.netKgPerBox) > 0 && (line.unitsPerBox ?? 0) > 0 ? Number(line.netKgPerBox) / (line.unitsPerBox as number) : 0 });
   const totalBoxes = lines.reduce((sum, line) => sum + line.boxes, 0);
-  const kg = netWeight(lines.map((line) => ({ ...line, id: "" })), data) + (data.palletTypes.find((item) => item.id === typeId)?.tareKg ?? 0);
+  const kg = netWeight((bricksMode ? lines.map(toUnits) : lines).map((line) => ({ ...line, id: "" })), data) + (data.palletTypes.find((item) => item.id === typeId)?.tareKg ?? 0);
   const palletType = data.palletTypes.find((item) => item.id === typeId);
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -74,11 +76,11 @@ export function PalletForm({ data, onCancel, onSubmit, onConfirm, defaultOrderId
     }))) return;
     const selectedOrder = data.orders.find((order) => order.id === orderId);
     const resolvedCustomer = assignment === "order" ? selectedOrder?.customerId : assignment === "customer" ? customerId : "";
-    await onSubmit({ typeId, location: location.trim(), orderId: assignment === "order" ? orderId : undefined, customerId: resolvedCustomer || undefined, status: assignment === "stock" ? "DISPONIBLE" : "RESERVADO", notes: notes.trim(), lines: lines.map((line) => ({ ...line, id: makeId("lin"), format: line.format!.trim(), packSize: line.packSize!.trim(), unitsPerBox: line.unitsPerBox!, netKgPerBox: Number(line.netKgPerBox) > 0 ? Number(line.netKgPerBox) : 0, lot: line.lot.trim() })) });
+    await onSubmit({ typeId, location: location.trim(), orderId: assignment === "order" ? orderId : undefined, customerId: resolvedCustomer || undefined, status: assignment === "stock" || assignment === "bricks" ? "DISPONIBLE" : "RESERVADO", stockKind: bricksMode ? "bricks" : undefined, notes: notes.trim(), lines: lines.map((raw) => bricksMode ? toUnits(raw) : raw).map((line) => ({ ...line, id: makeId("lin"), format: line.format!.trim(), packSize: line.packSize!.trim(), unitsPerBox: line.unitsPerBox!, netKgPerBox: Number(line.netKgPerBox) > 0 ? Number(line.netKgPerBox) : 0, lot: line.lot.trim() })) });
   };
   return <form onSubmit={submit}>
     <div className="form-grid">
-      <Field label="Destino del palet"><select value={assignment} onChange={(event) => setAssignment(event.target.value as typeof assignment)}><option value="stock">Stock de cajas</option><option value="order">Asignar a un pedido</option><option value="customer">Reservar para un cliente</option></select></Field>
+      <Field label="Destino del palet"><select value={assignment} onChange={(event) => setAssignment(event.target.value as typeof assignment)}><option value="stock">Stock de cajas</option><option value="bricks">Stock de bricks (unidades sueltas)</option><option value="order">Asignar a un pedido</option><option value="customer">Reservar para un cliente</option></select></Field>
       {assignment === "order" && <Field label="Pedido"><select required value={orderId} onChange={(event) => setOrderId(event.target.value)}><option value="">Selecciona pedido</option>{data.orders.map((order) => <option key={order.id} value={order.id}>{order.id} · {data.customers.find((item) => item.id === order.customerId)?.name}</option>)}</select></Field>}
       {assignment === "customer" && <Field label="Cliente"><select required value={customerId} onChange={(event) => setCustomerId(event.target.value)}><option value="">Selecciona cliente</option>{data.customers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>}
       <Field label="Tipo de palet"><select required value={typeId} onChange={(event) => setTypeId(event.target.value)}>{data.palletTypes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
@@ -92,16 +94,16 @@ export function PalletForm({ data, onCancel, onSubmit, onConfirm, defaultOrderId
         <Field label="Artículo"><select required value={line.articleId} onChange={(event) => changeArticle(index, event.target.value)}><option value="">Selecciona artículo</option>{data.articles.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.sku} · {item.name}</option>)}</select></Field>
         <Field label="Formato"><input required list="pallet-format-options" value={line.format ?? ""} onChange={(event) => setLines((items) => items.map((item, at) => at === index ? { ...item, format: event.target.value } : item))} placeholder="Brick / Botella / Cubo" /></Field>
         <Field label="Contenido por unidad"><input required value={line.packSize ?? ""} onChange={(event) => setLines((items) => items.map((item, at) => at === index ? { ...item, packSize: event.target.value } : item))} placeholder="1 L · 500 ml" /></Field>
-        <Field label="Unidades por caja"><input required type="number" min="1" step="1" value={line.unitsPerBox ?? 1} onChange={(event) => setLines((items) => items.map((item, at) => at === index ? { ...item, unitsPerBox: Number(event.target.value) } : item))} /></Field>
+        {!bricksMode && <Field label="Unidades por caja"><input required type="number" min="1" step="1" value={line.unitsPerBox ?? 1} onChange={(event) => setLines((items) => items.map((item, at) => at === index ? { ...item, unitsPerBox: Number(event.target.value) } : item))} /></Field>}
       </div>
       <div className="pallet-line-trace">
         <Field label="Lote"><input required value={line.lot} onChange={(event) => setLines((items) => items.map((item, at) => at === index ? { ...item, lot: event.target.value } : item))} placeholder="Lote" /></Field>
         <Field label="Caducidad"><input required type="date" value={line.expiry} onChange={(event) => setLines((items) => items.map((item, at) => at === index ? { ...item, expiry: event.target.value } : item))} /></Field>
-        <Field label="Cajas"><input required type="number" min="1" step="1" value={line.boxes} onChange={(event) => setLines((items) => items.map((item, at) => at === index ? { ...item, boxes: Number(event.target.value) } : item))} /></Field>
+        <Field label={bricksMode ? "Bricks (unidades)" : "Cajas"}><input required type="number" min="1" step="1" value={line.boxes} onChange={(event) => setLines((items) => items.map((item, at) => at === index ? { ...item, boxes: Number(event.target.value) } : item))} /></Field>
         <button className="icon-button danger-text" type="button" aria-label="Quitar línea" disabled={lines.length <= 1} onClick={() => setLines((items) => items.filter((_, at) => at !== index))}>×</button>
       </div>
     </div>)}</div>
-    <div className="capacity-note"><span>{totalBoxes} cajas · {lines.reduce((sum, line) => sum + line.boxes * (line.unitsPerBox ?? 0), 0)} unidades en este palet</span><span>{kg.toFixed(1)} kg brutos · máximo {palletType?.maxWeightKg ?? 0} kg</span></div>
+    <div className="capacity-note"><span>{bricksMode ? `${totalBoxes} bricks sueltos en este palet` : `${totalBoxes} cajas · ${lines.reduce((sum, line) => sum + line.boxes * (line.unitsPerBox ?? 0), 0)} unidades en este palet`}</span><span>{kg.toFixed(1)} kg brutos · máximo {palletType?.maxWeightKg ?? 0} kg</span></div>
     <Actions onCancel={onCancel} label="Crear palet y etiqueta" />
   </form>;
 }
