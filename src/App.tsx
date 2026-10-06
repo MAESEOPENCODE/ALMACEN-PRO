@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Activity, AlertTriangle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Barcode, Bell,
   CalendarDays, Check, CheckCircle2, ChevronRight, Clock3, Download, FileText,
-  LayoutDashboard, MapPin, MoreHorizontal, Package, Pencil, Plus, Printer, ScanLine,
+  LayoutDashboard, MapPin, MoreHorizontal, Package, Pencil, Plus, Printer, Trash2, ScanLine,
   Search, Settings2, ShieldCheck, Truck, Upload, Users, X, Boxes,
 } from "lucide-react";
 import type { AppData, Article, Carrier, Customer, Incident, Load, Movement, Order, Pallet, PalletLine, PalletStatus, PalletType, ViewName } from "./types";
@@ -11,7 +11,7 @@ import { articleName, boxesForArticle, customerName, expiryAlerts, expiryLevel, 
 import { makeId, nextDocument } from "./utils/ids";
 import { makeSscc, ssccHuman } from "./utils/gs1";
 import { Barcode as BarcodeView } from "./components/Barcode";
-import { ArticleForm, CarrierForm, CustomerForm, ExtractForm, LoadForm, OrderForm, PalletForm, PalletTypeForm, VehicleForm } from "./components/Forms";
+import { ArticleForm, CarrierForm, CustomerForm, ExtractForm, LoadEditForm, LoadForm, OrderForm, PalletEditForm, PalletForm, PalletTypeForm, VehicleForm } from "./components/Forms";
 import { ConfirmDialog, type ConfirmOptions } from "./components/ConfirmDialog";
 import { clearInstallPrompt, getInstallPrompt, subscribeInstallPrompt, type InstallPromptEvent } from "./pwaInstall";
 
@@ -232,7 +232,7 @@ export default function App() {
       confirmLabel: "Guardar igualmente",
       tone: "warning",
     }))) return;
-    if (existingId) setData((current) => ({ ...current, orders: current.orders.map((order) => order.id === existingId ? { ...order, ...cleanDraft } : order) }));
+    if (existingId) setData((current) => ({ ...current, orders: current.orders.map((order) => order.id === existingId ? { ...order, ...cleanDraft } : order), pallets: current.pallets.map((pallet) => pallet.orderId === existingId ? { ...pallet, customerId: cleanDraft.customerId } : pallet) }));
     else {
       const id = nextDocument("PED", data.orders.map((order) => order.id));
       setData((current) => ({ ...current, orders: [{ ...cleanDraft, id, createdAt: new Date().toISOString() }, ...current.orders] }));
@@ -267,6 +267,47 @@ export default function App() {
     const movement: Movement = { id: makeId("mov"), date: new Date().toISOString(), kind: "FABRICACIÓN", palletId: id, orderId: pallet.orderId, summary: pallet.orderId ? "Palet confeccionado y reservado para pedido" : "Palet confeccionado y añadido a stock" };
     setData((current) => ({ ...current, pallets: [pallet, ...current.pallets], movements: [movement, ...current.movements] }));
     setModal({ kind: "label", id }); notify(`${pallet.code} creado · revisión 01. Etiqueta lista para imprimir.`);
+  };
+
+  const savePalletEdit = (pallet: Pallet, changes: { typeId: string; location: string; notes: string; lines: Pallet["lines"] }) => {
+    if (pallet.status !== "DISPONIBLE" && pallet.status !== "RESERVADO") return notify("Solo se pueden editar palets disponibles o reservados.", "warning");
+    const signature = (lines: Pallet["lines"]) => JSON.stringify(lines.map((line) => [line.id, line.lot.trim(), line.expiry ?? "", line.boxes]));
+    const lines = changes.lines.map((line) => ({ ...line, lot: line.lot.trim() }));
+    const contentChanged = signature(lines) !== signature(pallet.lines);
+    const movement: Movement = { id: makeId("mov"), date: new Date().toISOString(), kind: "AJUSTE", palletId: pallet.id, orderId: pallet.orderId, summary: contentChanged ? "Contenido del palet modificado · etiqueta revisada" : "Datos del palet modificados" };
+    setData((current) => ({
+      ...current,
+      pallets: current.pallets.map((item) => item.id === pallet.id ? { ...item, typeId: changes.typeId, location: changes.location, notes: changes.notes.trim() || undefined, lines, labelRevision: contentChanged ? item.labelRevision + 1 : item.labelRevision } : item),
+      movements: [movement, ...current.movements],
+    }));
+    setModal({ kind: "pallet-detail", id: pallet.id });
+    notify(contentChanged ? `${pallet.code} actualizado · nueva revisión de etiqueta.` : `${pallet.code} actualizado.`);
+  };
+
+  const deletePallet = async (pallet: Pallet) => {
+    const inLoad = data.loads.some((load) => load.palletIds.includes(pallet.id));
+    if (inLoad || pallet.status === "EN_CARGA" || pallet.status === "EXPEDIDO") return notify("Este palet está en una carga o ya salió, y no se puede eliminar. Quítalo antes de la carga.", "warning");
+    if (!(await askConfirmation({ title: "Eliminar palet", message: `¿Quieres eliminar ${pallet.code}?`, details: "Se borrará el palet y su historial de movimientos. Esta acción no se puede deshacer.", confirmLabel: "Eliminar palet", tone: "danger" }))) return;
+    setData((current) => ({ ...current, pallets: current.pallets.filter((item) => item.id !== pallet.id), movements: current.movements.filter((event) => event.palletId !== pallet.id) }));
+    setModal(null);
+    notify(`${pallet.code} eliminado.`);
+  };
+
+  const deleteOrder = async (order: Order) => {
+    const related = data.pallets.filter((pallet) => pallet.orderId === order.id);
+    const blocked = related.some((pallet) => pallet.status === "EN_CARGA" || pallet.status === "EXPEDIDO" || data.loads.some((load) => load.palletIds.includes(pallet.id)));
+    if (blocked) return notify("Este pedido tiene palets en una carga o ya expedidos, y no se puede eliminar.", "warning");
+    if (!(await askConfirmation({ title: "Eliminar pedido", message: `¿Quieres eliminar ${order.id}?`, details: related.length ? `${related.length} palets asignados quedarán libres en el stock. Esta acción no se puede deshacer.` : "Esta acción no se puede deshacer.", confirmLabel: "Eliminar pedido", tone: "danger" }))) return;
+    const date = new Date().toISOString();
+    const released: Movement[] = related.map((pallet) => ({ id: makeId("mov"), date, kind: "LIBERACIÓN", palletId: pallet.id, summary: `Liberado al eliminar el pedido ${order.id}` }));
+    setData((current) => ({
+      ...current,
+      orders: current.orders.filter((item) => item.id !== order.id),
+      pallets: current.pallets.map((pallet) => pallet.orderId === order.id ? { ...pallet, orderId: undefined, customerId: undefined, orderPalletNo: undefined, status: pallet.status === "RESERVADO" ? "DISPONIBLE" : pallet.status } : pallet),
+      movements: [...released, ...current.movements],
+    }));
+    setModal(null);
+    notify(`${order.id} eliminado.`);
   };
 
   const saveExtraction = async (sourceId: string, result: { lineId: string; boxes: number; targetPalletId: string; orderId: string; location: string }) => {
@@ -337,6 +378,24 @@ export default function App() {
   };
 
   const updateLoad = (loadId: string, patch: Partial<Load>) => setData((current) => ({ ...current, loads: current.loads.map((item) => item.id === loadId ? { ...item, ...patch } : item) }));
+
+  const deleteLoad = async (load: Load) => {
+    if (load.status !== "BORRADOR") return notify("Una carga cerrada no se puede eliminar porque sus palets ya salieron.", "warning");
+    if (!(await askConfirmation({ title: "Eliminar carga", message: `¿Quieres eliminar ${load.code}?`, details: load.palletIds.length ? `${load.palletIds.length} palets volverán a estar disponibles. Esta acción no se puede deshacer.` : "Esta acción no se puede deshacer.", confirmLabel: "Eliminar carga", tone: "danger" }))) return;
+    const date = new Date().toISOString();
+    const released: Movement[] = load.palletIds.map((palletId) => ({ id: makeId("mov"), date, kind: "LIBERACIÓN", palletId, summary: `Liberado al eliminar ${load.code}` }));
+    setData((current) => {
+      const stillInDraft = (palletId: string) => current.loads.some((item) => item.id !== load.id && item.status === "BORRADOR" && item.palletIds.includes(palletId));
+      return {
+        ...current,
+        loads: current.loads.filter((item) => item.id !== load.id),
+        pallets: current.pallets.map((pallet) => load.palletIds.includes(pallet.id) && pallet.status === "EN_CARGA" && !stillInDraft(pallet.id) ? { ...pallet, status: pallet.statusBeforeLoad ?? (pallet.orderId || pallet.customerId ? "RESERVADO" : "DISPONIBLE"), statusBeforeLoad: undefined } : pallet),
+        movements: [...released, ...current.movements],
+      };
+    });
+    setSelectedLoadId(null);
+    notify(`${load.code} eliminada.`);
+  };
 
   const removePalletFromLoad = (loadId: string, palletId: string) => setData((current) => {
     const load = current.loads.find((item) => item.id === loadId);
@@ -481,7 +540,7 @@ export default function App() {
       <div className="table-toolbar"><div className="table-count"><strong>{data.loads.length}</strong> cargas registradas</div><div className="toolbar-filters"><span className="filter-label"><span className="load-status-dot" /> {data.loads.filter((load) => load.status === "BORRADOR").length} en preparación</span></div></div>
       {data.loads.length ? <div className="data-table-wrap"><table className="data-table"><thead><tr><th>Carga</th><th>Destino / pedidos</th><th>Salida prevista</th><th>Palets</th><th>Peso</th><th>Estado</th><th></th></tr></thead><tbody>{data.loads.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((load) => { const pallets = load.palletIds.map((id) => data.pallets.find((pallet) => pallet.id === id)).filter((item): item is Pallet => Boolean(item)); const orders = [...new Set(pallets.map((pallet) => pallet.orderId).filter(Boolean))]; return <tr key={load.id} className="clickable-row" onClick={() => setSelectedLoadId(load.id)}><td><span className="primary-code">{load.code}</span><small className="cell-sub">{load.dock || "Sin muelle"}</small></td><td><strong>{orders.length ? `${orders.length} ${orders.length === 1 ? "pedido" : "pedidos"}` : "Carga manual"}</strong><small className="cell-sub">{orders.map((id) => customerName(data, data.orders.find((order) => order.id === id)?.customerId)).filter((value, index, array) => array.indexOf(value) === index).join(", ") || "Stock de cajas"}</small></td><td>{dateTimeText(load.departureAt)}</td><td>{num(pallets.length)}</td><td>{kg(loadWeight(pallets, data))}</td><td><Status label={load.status === "CERRADA" ? "Expedida" : "En preparación"} tone={load.status === "CERRADA" ? "green" : "orange"} /></td><td><button className="icon-button" aria-label="Abrir carga" onClick={(event) => { event.stopPropagation(); setSelectedLoadId(load.id); }}><ChevronRight size={17} /></button></td></tr>; })}</tbody></table></div> : <EmptyState icon={Truck} title="Sin cargas todavía" detail="Crea una salida y carga un pedido completo o selecciona palets manualmente." action={<button className="button primary" onClick={() => setModal({ kind: "load" })}>Preparar primera carga</button>} />}
       <div className="bottom-hint"><FileText size={16} /> Cada carga genera un packing list con la secuencia de palets y el peso por bulto.</div>
-    </> : <LoadWorkspace data={data} load={activeLoad} allDraftIds={allDraftPalletIds} manualPalletId={manualPalletId} setManualPalletId={setManualPalletId} onBack={() => setSelectedLoadId(null)} onAddPallet={(id) => addPalletsToLoad(activeLoad.id, [id])} onAddOrder={(orderId) => addPalletsToLoad(activeLoad.id, data.pallets.filter((pallet) => pallet.orderId === orderId).map((pallet) => pallet.id))} onRemove={(palletId) => removePalletFromLoad(activeLoad.id, palletId)} onMove={(index, offset) => movePallet(activeLoad.id, index, offset)} onClose={() => closeLoad(activeLoad)} onUpdate={(patch) => updateLoad(activeLoad.id, patch)} onPacking={() => setModal({ kind: "packing", id: activeLoad.id })} onPallet={(id) => setModal({ kind: "pallet-detail", id })} />}
+    </> : <LoadWorkspace data={data} load={activeLoad} allDraftIds={allDraftPalletIds} manualPalletId={manualPalletId} setManualPalletId={setManualPalletId} onBack={() => setSelectedLoadId(null)} onAddPallet={(id) => addPalletsToLoad(activeLoad.id, [id])} onAddOrder={(orderId) => addPalletsToLoad(activeLoad.id, data.pallets.filter((pallet) => pallet.orderId === orderId).map((pallet) => pallet.id))} onRemove={(palletId) => removePalletFromLoad(activeLoad.id, palletId)} onMove={(index, offset) => movePallet(activeLoad.id, index, offset)} onClose={() => closeLoad(activeLoad)} onUpdate={(patch) => updateLoad(activeLoad.id, patch)} onEdit={() => setModal({ kind: "load-edit", id: activeLoad.id })} onDelete={() => deleteLoad(activeLoad)} onPacking={() => setModal({ kind: "packing", id: activeLoad.id })} onPallet={(id) => setModal({ kind: "pallet-detail", id })} />}
   </>;
 
   const masterTabs = ["Artículos", "Clientes", "Transporte", "Tipos de palet", "Datos y copias"];
@@ -502,9 +561,11 @@ export default function App() {
   const modalRender = () => {
     if (!modal) return null;
     const close = () => setModal(null);
-    if (modal.kind === "order") return <Modal title="Nuevo pedido" eyebrow="PEDIDOS · ALTA" onClose={close}><OrderForm data={data} onCancel={close} onSubmit={(draft) => saveOrder(draft)} /></Modal>;
+    if (modal.kind === "order") { const editing = modal.id ? data.orders.find((item) => item.id === modal.id) : undefined; return <Modal title={editing ? `Editar ${editing.id}` : "Nuevo pedido"} eyebrow={editing ? "PEDIDOS · EDICIÓN" : "PEDIDOS · ALTA"} onClose={close}><OrderForm data={data} initial={editing} onCancel={close} onSubmit={(draft) => saveOrder(draft, editing?.id)} /></Modal>; }
+    if (modal.kind === "pallet-edit") { const editing = data.pallets.find((item) => item.id === modal.id); return editing ? <Modal title={`Editar ${editing.code}`} eyebrow="ALMACÉN · EDICIÓN DE PALET" onClose={close} size="wide"><PalletEditForm data={data} pallet={editing} onCancel={() => setModal({ kind: "pallet-detail", id: editing.id })} onSubmit={(changes) => savePalletEdit(editing, changes)} /></Modal> : null; }
     if (modal.kind === "pallet") return <Modal title="Confeccionar palet" eyebrow="ALMACÉN · NUEVA UNIDAD LOGÍSTICA" onClose={close} size="wide"><PalletForm data={data} defaultOrderId={modal.orderId} onCancel={close} onSubmit={savePallet} onConfirm={askConfirmation} /></Modal>;
     if (modal.kind === "extract") { const pallet = data.pallets.find((item) => item.id === modal.id); return pallet ? <Modal title="Extraer cajas" eyebrow="STOCK · REEMPAQUE" onClose={close} size="wide"><ExtractForm data={data} pallet={pallet} onCancel={close} onSubmit={(result) => saveExtraction(pallet.id, result)} /></Modal> : null; }
+    if (modal.kind === "load-edit") { const editing = data.loads.find((item) => item.id === modal.id); return editing && editing.status === "BORRADOR" ? <Modal title={`Editar ${editing.code}`} eyebrow="EXPEDICIÓN · EDICIÓN DE CARGA" onClose={close}><LoadEditForm data={data} load={editing} onCancel={close} onSubmit={(patch) => { updateLoad(editing.id, patch); setModal(null); notify(`${editing.code} actualizada.`); }} /></Modal> : null; }
     if (modal.kind === "load") return <Modal title="Preparar salida" eyebrow="EXPEDICIÓN · NUEVA CARGA" onClose={close}><LoadForm data={data} onCancel={close} onSubmit={saveLoad} /></Modal>;
     if (modal.kind === "article") { const item = data.articles.find((article) => article.id === modal.id); return <Modal title={item ? "Editar artículo" : "Nuevo artículo"} eyebrow="MAESTROS · CATÁLOGO" onClose={close}><ArticleForm initial={item} onCancel={close} onSubmit={(draft) => addArticle(draft, item?.id)} /></Modal>; }
     if (modal.kind === "customer") { const item = data.customers.find((customer) => customer.id === modal.id); return <Modal title={item ? "Editar cliente" : "Nuevo cliente"} eyebrow="MAESTROS · CLIENTES" onClose={close}><CustomerForm initial={item} onCancel={close} onSubmit={(draft) => addCustomer(draft, item?.id)} /></Modal>; }
@@ -513,8 +574,8 @@ export default function App() {
     if (modal.kind === "pallet-type") { const item = data.palletTypes.find((type) => type.id === modal.id); return <Modal title={item ? "Editar tipo de palet" : "Nuevo tipo de palet"} eyebrow="MAESTROS · EMBALAJES" onClose={close}><PalletTypeForm initial={item} onCancel={close} onSubmit={(draft) => addPalletType(draft, item?.id)} /></Modal>; }
     if (modal.kind === "label") { const pallet = data.pallets.find((item) => item.id === modal.id); return pallet ? <Modal title="Etiqueta logística" eyebrow={`PALET · ${pallet.code}`} onClose={close} size="print"><div className="print-actions"><span>Revisión {String(pallet.labelRevision).padStart(2, "0")} · Etiqueta lista para impresión</span><button className="button primary" onClick={() => window.print()}><Printer size={16} /> Imprimir etiqueta</button></div><PalletLabel pallet={pallet} data={data} /><div className="print-bottom-hint"><ShieldCheck size={15} /> Si cambias la cantidad de cajas, la etiqueta de origen incrementa su revisión automáticamente.</div></Modal> : null; }
     if (modal.kind === "packing") { const load = data.loads.find((item) => item.id === modal.id); return load ? <Modal title="Packing list" eyebrow={`CARGA · ${load.code}`} onClose={close} size="print"><div className="print-actions"><span>Lista de carga · {load.palletIds.length} palets</span><button className="button primary" onClick={() => window.print()}><Printer size={16} /> Imprimir packing list</button></div><PackingList load={load} data={data} /><div className="print-bottom-hint"><FileText size={15} /> Incluye la secuencia, los pedidos, lotes y peso bruto por palet.</div></Modal> : null; }
-    if (modal.kind === "pallet-detail") { const pallet = data.pallets.find((item) => item.id === modal.id); return pallet ? <Modal title={pallet.code} eyebrow="FICHA DE PALET" onClose={close} size="wide"><PalletDetail data={data} pallet={pallet} onLabel={() => setModal({ kind: "label", id: pallet.id })} onExtract={() => setModal({ kind: "extract", id: pallet.id })} movements={data.movements.filter((event) => event.palletId === pallet.id || event.relatedPalletId === pallet.id)} /></Modal> : null; }
-    if (modal.kind === "order-detail") { const order = data.orders.find((item) => item.id === modal.id); return order ? <Modal title={order.id} eyebrow="FICHA DE PEDIDO" onClose={close} size="wide"><OrderDetail data={data} order={order} onPrepare={() => { setModal({ kind: "pallet", orderId: order.id }); }} onLoad={() => { setModal({ kind: "load" }); }} /></Modal> : null; }
+    if (modal.kind === "pallet-detail") { const pallet = data.pallets.find((item) => item.id === modal.id); return pallet ? <Modal title={pallet.code} eyebrow="FICHA DE PALET" onClose={close} size="wide"><PalletDetail data={data} pallet={pallet} onLabel={() => setModal({ kind: "label", id: pallet.id })} onExtract={() => setModal({ kind: "extract", id: pallet.id })} onEdit={() => setModal({ kind: "pallet-edit", id: pallet.id })} onDelete={() => deletePallet(pallet)} movements={data.movements.filter((event) => event.palletId === pallet.id || event.relatedPalletId === pallet.id)} /></Modal> : null; }
+    if (modal.kind === "order-detail") { const order = data.orders.find((item) => item.id === modal.id); return order ? <Modal title={order.id} eyebrow="FICHA DE PEDIDO" onClose={close} size="wide"><OrderDetail data={data} order={order} onPrepare={() => { setModal({ kind: "pallet", orderId: order.id }); }} onLoad={() => { setModal({ kind: "load" }); }} onEdit={() => setModal({ kind: "order", id: order.id })} onDelete={() => deleteOrder(order)} /></Modal> : null; }
     return null;
   };
 
@@ -535,24 +596,24 @@ export default function App() {
   </div>;
 
   function LayersIcon() { return <span className="stacked-icon"><Boxes size={16} /></span>; }
-  function PalletDetail({ pallet, data, onLabel, onExtract, movements }: { pallet: Pallet; data: AppData; onLabel: () => void; onExtract: () => void; movements: Movement[] }) {
+  function PalletDetail({ pallet, data, onLabel, onExtract, onEdit, onDelete, movements }: { pallet: Pallet; data: AppData; onLabel: () => void; onExtract: () => void; onEdit: () => void; onDelete: () => void; movements: Movement[] }) {
     const order = data.orders.find((item) => item.id === pallet.orderId); const type = data.palletTypes.find((item) => item.id === pallet.typeId);
     const canExtract = pallet.status === "DISPONIBLE" && pallet.lines.some((line) => line.boxes > 0) && !allDraftPalletIds.includes(pallet.id);
     const status = PALLET_STATUS_META[pallet.status];
     return <><div className="detail-hero"><div className="detail-hero-icon"><Package size={22} /></div><div className="detail-hero-copy"><strong>{pallet.code}</strong><span>{type?.name} · {pallet.location}</span>{order && <small className="order-seq-detail">Orden {String(pallet.orderPalletNo ?? 1).padStart(2, "0")} del pedido {order.id}</small>}</div><Status label={status.label} tone={status.tone} /><span className="revision-tag">REV {String(pallet.labelRevision).padStart(2, "0")}</span></div>
-      <div className="detail-actions"><button className="button secondary" onClick={onLabel}><Printer size={15} /> Ver etiqueta</button>{canExtract && <button className="button primary" onClick={onExtract}><ArrowDown size={15} /> Extraer cajas</button>}</div>
+      <div className="detail-actions"><button className="button secondary" onClick={onLabel}><Printer size={15} /> Ver etiqueta</button>{canExtract && <button className="button primary" onClick={onExtract}><ArrowDown size={15} /> Extraer cajas</button>}{(pallet.status === "DISPONIBLE" || pallet.status === "RESERVADO") && <button className="button secondary" onClick={onEdit}><Pencil size={15} /> Editar</button>}<button className="button secondary danger-text" onClick={onDelete}><Trash2 size={15} /> Eliminar</button></div>
       <div className="detail-stats"><div><span>CAJAS</span><strong>{num(sumBoxes(pallet.lines))}</strong></div><div><span>UNIDADES</span><strong>{num(sumUnits(pallet.lines, data))}</strong></div><div><span>PESO BRUTO</span><strong>{kg(palletWeight(pallet, data))}</strong></div><div><span>DESTINO</span><strong>{order?.id ?? customerName(data, pallet.customerId)}</strong></div></div>
       <div className="detail-section"><div className="section-heading"><h3>Contenido y trazabilidad</h3>{palletIsMixed(pallet) && <span className="mixed-tag">PALET MIXTO</span>}</div><div className="detail-lines">{pallet.lines.map((line) => { const article = data.articles.find((item) => item.id === line.articleId); return <div className="detail-line" key={line.id}><div className="detail-line-symbol"><Boxes size={16} /></div><div className="detail-line-main"><strong>{article?.sku} · {article?.name}</strong><span>{line.format ?? article?.format} {line.packSize ?? article?.packSize} · {line.unitsPerBox ?? article?.unitsPerBox} unidades / caja</span><small>Lote <b>{line.lot}</b> · Caducidad {dateText(line.expiry)}{line.sourcePalletId && <span> · Procede de {data.pallets.find((item) => item.id === line.sourcePalletId)?.code ?? "palet origen"}</span>}</small></div><div className="detail-line-qty"><strong>{num(line.boxes)}</strong><span>cajas</span></div><div className="detail-line-qty units"><strong>{num(line.boxes * (line.unitsPerBox ?? article?.unitsPerBox ?? 0))}</strong><span>unidades</span></div></div>; })}{!pallet.lines.length && <p className="muted-copy">Sin cajas disponibles en este palet.</p>}</div></div>
       <div className="detail-section movement-section"><div className="section-heading"><h3>Historial de movimientos</h3><span className="muted-copy">{movements.length} eventos</span></div>{movements.slice().reverse().map((event) => <div className="movement-row" key={event.id}><span className="movement-marker" /><div><strong>{movementLabels[event.kind]}</strong><span>{event.summary}</span></div><small>{dateTimeText(event.date)}</small></div>)}{!movements.length && <p className="muted-copy">Sin movimientos registrados.</p>}</div>
     </>;
   }
-  function OrderDetail({ order, data, onPrepare, onLoad }: { order: Order; data: AppData; onPrepare: () => void; onLoad: () => void }) {
+  function OrderDetail({ order, data, onPrepare, onLoad, onEdit, onDelete }: { order: Order; data: AppData; onPrepare: () => void; onLoad: () => void; onEdit: () => void; onDelete: () => void }) {
     const status = orderStatus(order, data); const customer = data.customers.find((item) => item.id === order.customerId); const related = data.pallets.filter((pallet) => pallet.orderId === order.id);
     return <><div className="order-detail-head"><div className="detail-hero-icon"><FileText size={21} /></div><div className="detail-hero-copy"><strong>{customer?.name ?? "Cliente"}</strong><span>{order.reference ? `Referencia ${order.reference} · ` : ""}{order.deliveryAddress}</span><small><CalendarDays size={13} /> Entrega {dateText(order.deliveryDate)} · {relativeDate(order.deliveryDate)}</small></div><Status label={status.label} tone={status.tone} /></div>
       <div className="order-progress-card"><div><span>{status.label === "Expedición parcial" || status.label === "Expedido" ? "PROGRESO DE EXPEDICIÓN" : "PREPARACIÓN DEL PEDIDO"}</span><strong>{status.percent}%</strong></div><Progress value={status.percent} /><small>{status.label === "Expedición parcial" || status.label === "Expedido" ? "El avance refleja las cajas de este pedido que ya salieron." : "Las cajas se cuentan desde palets reservados o expedidos para este pedido."}</small></div>
       <div className="detail-section"><div className="section-heading"><h3>Líneas de pedido</h3><span className="muted-copy">{order.lines.length} referencias</span></div><div className="order-line-list">{order.lines.map((line) => { const article = data.articles.find((item) => item.id === line.articleId); const assigned = progressForLine(line, data.pallets, order.id); const remaining = Math.max(0, line.boxes - assigned); return <div className="order-detail-line" key={line.articleId}><div className="detail-line-symbol"><Boxes size={16} /></div><div className="order-detail-line-main"><strong>{article?.sku} · {article?.name}</strong><span>{article?.format} {article?.packSize} · {line.boxes * (article?.unitsPerBox ?? 0)} unidades solicitadas</span><Progress value={line.boxes ? (assigned / line.boxes) * 100 : 0} /></div><div className="order-qty"><strong>{num(assigned)} <small>/ {num(line.boxes)}</small></strong><span>cajas asignadas</span></div><div className={`remaining-boxes ${remaining ? "pending" : "complete"}`}>{remaining ? `${num(remaining)} pendientes` : "Completo"}</div></div>; })}</div></div>
       <div className="detail-section"><div className="section-heading"><h3>Palets asignados</h3><span className="muted-copy">{related.length} palets · lotes y caducidades</span></div>{related.length ? <div className="related-pallet-list">{related.map((pallet) => <div key={pallet.id}><Package size={15} /><strong>{pallet.code} · Orden {String(pallet.orderPalletNo ?? 1).padStart(2, "0")}</strong><span className="pallet-traceability">{pallet.lines.length ? pallet.lines.map((line) => { const article = data.articles.find((item) => item.id === line.articleId); return `${line.boxes} cajas · ${article?.name ?? "Artículo"} · ${line.format ?? article?.format ?? "—"} ${line.packSize ?? article?.packSize ?? ""} · ${line.unitsPerBox ?? article?.unitsPerBox ?? 0} uds/caja · Lote ${line.lot || "—"} · Cad. ${dateText(line.expiry)}`; }).join(" / ") : "Sin cajas actuales"}</span><Status label={PALLET_STATUS_META[pallet.status].label} tone={PALLET_STATUS_META[pallet.status].tone} /></div>)}</div> : <p className="muted-copy">Todavía no hay palets asignados a este pedido.</p>}</div>
-      {order.notes && <div className="order-note-box"><span>NOTAS DE ENTREGA</span><p>{order.notes}</p></div>}<div className="detail-actions"><button className="button secondary" onClick={onLoad}><Truck size={15} /> Preparar salida</button><button className="button primary" onClick={onPrepare}><Package size={15} /> Confeccionar palet</button></div>
+      {order.notes && <div className="order-note-box"><span>NOTAS DE ENTREGA</span><p>{order.notes}</p></div>}<div className="detail-actions"><button className="button secondary danger-text" onClick={onDelete}><Trash2 size={15} /> Eliminar</button><button className="button secondary" onClick={onEdit}><Pencil size={15} /> Editar</button><button className="button secondary" onClick={onLoad}><Truck size={15} /> Preparar salida</button><button className="button primary" onClick={onPrepare}><Package size={15} /> Confeccionar palet</button></div>
     </>;
   }
 }
@@ -579,14 +640,14 @@ function OperatorWorkspace({ data, onOpenPallet, onPreparePallet, onLoad, onGoPa
   </div>;
 }
 
-function LoadWorkspace({ data, load, allDraftIds, manualPalletId, setManualPalletId, onBack, onAddPallet, onAddOrder, onRemove, onMove, onClose, onUpdate, onPacking, onPallet }: { data: AppData; load: Load; allDraftIds: string[]; manualPalletId: string; setManualPalletId: (id: string) => void; onBack: () => void; onAddPallet: (id: string) => void; onAddOrder: (id: string) => void; onRemove: (id: string) => void; onMove: (index: number, offset: number) => void; onClose: () => void; onUpdate: (patch: Partial<Load>) => void; onPacking: () => void; onPallet: (id: string) => void }) {
+function LoadWorkspace({ data, load, allDraftIds, manualPalletId, setManualPalletId, onBack, onAddPallet, onAddOrder, onRemove, onMove, onClose, onUpdate, onEdit, onDelete, onPacking, onPallet }: { data: AppData; load: Load; allDraftIds: string[]; manualPalletId: string; setManualPalletId: (id: string) => void; onBack: () => void; onAddPallet: (id: string) => void; onAddOrder: (id: string) => void; onRemove: (id: string) => void; onMove: (index: number, offset: number) => void; onClose: () => void; onUpdate: (patch: Partial<Load>) => void; onEdit: () => void; onDelete: () => void; onPacking: () => void; onPallet: (id: string) => void }) {
   const pallets = load.palletIds.map((id) => data.pallets.find((pallet) => pallet.id === id)).filter((item): item is Pallet => Boolean(item));
   const orders = data.orders.filter((order) => data.pallets.some((pallet) => pallet.orderId === order.id && ["DISPONIBLE", "RESERVADO"].includes(pallet.status) && pallet.lines.length > 0));
   const occupiedElsewhere = data.loads.filter((item) => item.status === "BORRADOR" && item.id !== load.id).flatMap((item) => item.palletIds);
   const manualOptions = data.pallets.filter((pallet) => ["DISPONIBLE", "RESERVADO"].includes(pallet.status) && pallet.lines.length > 0 && !allDraftIds.includes(pallet.id) && !occupiedElsewhere.includes(pallet.id) && !load.palletIds.includes(pallet.id));
   const carrier = data.carriers.find((item) => item.id === load.carrierId); const vehicle = data.vehicles.find((item) => item.id === load.vehicleId);
   const closed = load.status === "CERRADA";
-  return <><button className="back-link" onClick={onBack}><ArrowLeft size={15} /> Todas las cargas</button><div className="load-workspace-head"><div><div className="eyebrow">{closed ? "HISTÓRICO DE EXPEDICIÓN" : "CARGA EN PREPARACIÓN"}</div><h2>{load.code}</h2><div className="load-head-meta"><span><Truck size={14} />{carrier?.name ?? "Transportista sin asignar"}{vehicle ? ` · ${vehicle.plate}` : ""}</span><span><MapPin size={14} />{load.dock || "Sin muelle"}</span><span><CalendarDays size={14} />{dateTimeText(load.departureAt)}</span></div></div><Status label={closed ? "Expedida" : "Borrador"} tone={closed ? "green" : "orange"} /></div>
+  return <><button className="back-link" onClick={onBack}><ArrowLeft size={15} /> Todas las cargas</button><div className="load-workspace-head"><div><div className="eyebrow">{closed ? "HISTÓRICO DE EXPEDICIÓN" : "CARGA EN PREPARACIÓN"}</div><h2>{load.code}</h2><div className="load-head-meta"><span><Truck size={14} />{carrier?.name ?? "Transportista sin asignar"}{vehicle ? ` · ${vehicle.plate}` : ""}</span><span><MapPin size={14} />{load.dock || "Sin muelle"}</span><span><CalendarDays size={14} />{dateTimeText(load.departureAt)}</span></div></div><div className="page-actions">{!closed && <><button className="button secondary" onClick={onEdit}><Pencil size={15} /> Editar</button><button className="button secondary danger-text" onClick={onDelete}><Trash2 size={15} /> Eliminar</button></>}<Status label={closed ? "Expedida" : "Borrador"} tone={closed ? "green" : "orange"} /></div></div>
     <div className="load-summary-cards"><div><span>PALETS EN CARGA</span><strong>{num(pallets.length)}</strong></div><div><span>CAJAS TOTALES</span><strong>{num(pallets.reduce((sum, pallet) => sum + sumBoxes(pallet.lines), 0))}</strong></div><div><span>PESO BRUTO</span><strong>{kg(loadWeight(pallets, data))}</strong></div><div><span>ORDEN DE CARGA</span><strong className="sequence-summary">{pallets.length ? `${num(pallets.length)} posiciones` : "Sin definir"}</strong></div></div>
     {(() => { const validation = validateLoad(pallets, data, vehicle?.maxWeightKg); const capacity = loadCapacityPercent(pallets, data, vehicle?.maxWeightKg); return <div className="load-validation-panel"><div><div className="eyebrow">CONTROL DE EXPEDICIÓN</div><strong>{validation.ok ? "Carga lista para validar" : "Revisión necesaria"}</strong><span>{vehicle ? `${kg(loadWeight(pallets, data))} de ${kg(vehicle.maxWeightKg)} · ${capacity ?? 0}% de capacidad` : "Asigna un vehículo para controlar capacidad."}</span></div><div className="load-validation-status">{validation.errors.length ? <Status label={`${validation.errors.length} error${validation.errors.length === 1 ? "" : "es"}`} tone="red" /> : <Status label="Sin errores" tone="green" />}{validation.warnings.length > 0 && <Status label={`${validation.warnings.length} aviso${validation.warnings.length === 1 ? "" : "s"}`} tone="orange" />}</div></div>; })()}
     {!closed && <div className="load-controls-panel"><div><label>Precinto</label><input value={load.seal ?? ""} onChange={(e) => onUpdate({ seal: e.target.value.trim() || undefined })} placeholder="Nº de precinto" /></div><div><label>Temperatura (°C)</label><input type="number" step="0.1" value={load.temperatureC ?? ""} onChange={(e) => onUpdate({ temperatureC: e.target.value === "" ? undefined : Number(e.target.value) })} placeholder="—" /></div><button className="button secondary" onClick={() => onUpdate({ loadingStartedAt: load.loadingStartedAt ?? new Date().toISOString() })}>{load.loadingStartedAt ? `Carga iniciada ${dateTimeText(load.loadingStartedAt)}` : "Iniciar carga"}</button></div>}
