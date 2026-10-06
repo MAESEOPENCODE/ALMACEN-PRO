@@ -67,6 +67,8 @@ export type Pallet = {
   statusBeforeLoad?: PalletStatus;
   lines: PalletLine[];
   labelRevision: number;
+  /** "bricks": palet de bricks sueltos; las líneas cuentan unidades (unitsPerBox = 1). Sin valor: cajas. */
+  stockKind?: "bricks";
   /** GS1 logistic unit identifier. */
   sscc?: string;
   notes?: string;
