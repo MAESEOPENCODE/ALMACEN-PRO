@@ -572,9 +572,8 @@ function QualityPage({ data, setData, notify }: { data: AppData; setData: React.
   </div>;
 }
 
-function ControlPage({ data, setData, notify, onOpenPallet }: { data: AppData; setData: React.Dispatch<React.SetStateAction<AppData>>; notify: (message: string, type?: ToastState["type"]) => void; onOpenPallet: (id: string) => void }) {
+function ControlPage({ data, setData, notify, onOpenPallet, scanOpen, setScanOpen }: { data: AppData; setData: React.Dispatch<React.SetStateAction<AppData>>; notify: (message: string, type?: ToastState["type"]) => void; onOpenPallet: (id: string) => void; scanOpen: boolean; setScanOpen: (open: boolean) => void }) {
   const [trace, setTrace] = useState("");
-  const [scanOpen, setScanOpen] = useState(false);
   const [online, setOnline] = useState(() => navigator.onLine);
   const [incidentType, setIncidentType] = useState<Incident["type"]>("PALET_DANADO");
   const [severity, setSeverity] = useState<Incident["severity"]>("MEDIA");
@@ -619,6 +618,7 @@ export default function App() {
   const [selectedLoadId, setSelectedLoadId] = useState<string | null>(null);
   const [manualPalletId, setManualPalletId] = useState("");
   const [mobileNav, setMobileNav] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
   const [saved, setSaved] = useState(true);
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
   const [showIosInstallHint, setShowIosInstallHint] = useState(false);
@@ -643,23 +643,42 @@ export default function App() {
 
   useEffect(() => { try { setSaved(false); writeData(data); setSaved(true); } catch { setSaved(false); } }, [data]);
   useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(null), 4200); return () => window.clearTimeout(timer); }, [toast]);
+  // Botón "atrás" (Android o navegador): cierra lo que esté encima (aviso, escáner, ventana, menú) y,
+  // si no hay nada abierto, vuelve a la pantalla anterior. Nunca pregunta si se quiere salir.
+  const navRef = useRef({ trail: [] as ViewName[], prevView: view, overlays: 0, ignorePops: 0 });
+  const liveRef = useRef({ view, modal, mobileNav, scanOpen, confirmation });
+  liveRef.current = { view, modal, mobileNav, scanOpen, confirmation };
+  const overlayCount = (modal ? 1 : 0) + (mobileNav ? 1 : 0) + (scanOpen ? 1 : 0) + (confirmation ? 1 : 0);
   useEffect(() => {
-    let leaving = false;
-    history.pushState({ almacenGuard: true }, "");
-    const onPop = async () => {
-      if (leaving) return;
-      history.pushState({ almacenGuard: true }, "");
-      const exit = await askConfirmation({ title: "Salir de la aplicación", message: "¿Quieres salir de Almacén?", details: "Tus datos quedan guardados en este dispositivo.", confirmLabel: "Salir", tone: "danger" });
-      if (!exit) return;
-      leaving = true;
-      window.close();
-      window.setTimeout(() => history.go(-2), 150);
+    const nav = navRef.current;
+    const viewChanged = nav.prevView !== view;
+    const delta = (viewChanged ? 1 : 0) + (overlayCount - nav.overlays);
+    if (viewChanged) nav.trail.push(nav.prevView);
+    nav.prevView = view;
+    nav.overlays = overlayCount;
+    if (delta > 0) {
+      for (let i = 0; i < delta; i++) history.pushState({ almacenNav: true }, "");
+    } else if (delta < 0) {
+      nav.ignorePops += 1;
+      history.go(delta);
+    }
+  }, [view, overlayCount]);
+  useEffect(() => {
+    const onPop = () => {
+      const nav = navRef.current;
+      if (nav.ignorePops > 0) { nav.ignorePops -= 1; return; }
+      const live = liveRef.current;
+      if (live.confirmation) { nav.overlays -= 1; resolveConfirmation(false); return; }
+      if (live.scanOpen) { nav.overlays -= 1; setScanOpen(false); return; }
+      if (live.modal) { nav.overlays -= 1; setModal(null); return; }
+      if (live.mobileNav) { nav.overlays -= 1; setMobileNav(false); return; }
+      const previous = nav.trail.pop();
+      if (previous) { nav.prevView = previous; setView(previous); return; }
+      history.back(); // entradas antiguas de una sesión anterior: seguir hacia atrás hasta salir
     };
-    const onBeforeUnload = (event: BeforeUnloadEvent) => { if (leaving) return; event.preventDefault(); event.returnValue = ""; };
     window.addEventListener("popstate", onPop);
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => { window.removeEventListener("popstate", onPop); window.removeEventListener("beforeunload", onBeforeUnload); };
-  }, [askConfirmation]);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [resolveConfirmation]);
   useEffect(() => {
     const isStandalone = window.matchMedia("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
     const userAgent = navigator.userAgent;
@@ -1031,7 +1050,7 @@ export default function App() {
   </>;
 
   const operatorPage = <OperatorWorkspace data={data} onOpenPallet={(id) => setModal({ kind: "pallet-detail", id })} onPreparePallet={() => openPalletModal()} onLoad={() => setModal({ kind: "load" })} onGoPallets={() => setView("palets")} />;
-  const controlPage = <ControlPage data={data} setData={setData} notify={notify} onOpenPallet={(id) => setModal({ kind: "pallet-detail", id })} />;
+  const controlPage = <ControlPage data={data} setData={setData} notify={notify} onOpenPallet={(id) => setModal({ kind: "pallet-detail", id })} scanOpen={scanOpen} setScanOpen={setScanOpen} />;
   const inventoryPage = <InventoryPage data={data} setData={setData} notify={notify} />;
   const productionPage = <ProductionPage data={data} setData={setData} notify={notify} />;
   const qualityPage = <QualityPage data={data} setData={setData} notify={notify} />;
