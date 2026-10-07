@@ -4,7 +4,6 @@ const APP_SHELL = [
   "./",
   "./index.html",
   "./manifest.webmanifest",
-  "./manus-routes.json",
   "./salsa-log-mark.svg",
   "./icon-180.png",
   "./icon-192.png",
@@ -64,7 +63,7 @@ self.addEventListener("fetch", (event) => {
   if (requestUrl.origin !== self.location.origin) return;
 
   const isAppDocument = request.mode === "navigate"
-    || ["index.html", "manifest.webmanifest", "manus-routes.json"].includes(requestUrl.pathname.split("/").pop());
+    || ["index.html", "manifest.webmanifest"].includes(requestUrl.pathname.split("/").pop());
 
   event.respondWith((async () => {
     const cached = await caches.match(request);
