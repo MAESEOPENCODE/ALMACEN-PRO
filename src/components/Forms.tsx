@@ -204,8 +204,8 @@ export function LoadEditForm({ data, load, onCancel, onSubmit }: { data: AppData
 export function ArticleForm({ initial, onCancel, onSubmit }: { initial?: Article; onCancel: () => void; onSubmit: (article: Omit<Article, "id">) => void }) {
   const [sku, setSku] = useState(initial?.sku ?? ""); const [name, setName] = useState(initial?.name ?? ""); const [family, setFamily] = useState(initial?.family ?? "Gazpachos");
   const [format, setFormat] = useState(initial?.format ?? "Brick"); const [packSize, setPackSize] = useState(initial?.packSize ?? "1 L"); const [unitsPerBox, setUnitsPerBox] = useState(initial?.unitsPerBox ?? 6);
-  const [boxesPerPallet, setBoxesPerPallet] = useState(initial?.boxesPerPallet ?? 64); const [netKgPerBox, setNetKgPerBox] = useState(initial?.netKgPerBox ?? 6.4); const [gtin, setGtin] = useState(initial?.gtin ?? "");
-  return <form onSubmit={(event) => { event.preventDefault(); onSubmit({ sku: sku.trim().toUpperCase(), name: name.trim(), family: family.trim(), format, packSize: packSize.trim(), unitsPerBox, boxesPerPallet, netKgPerBox, gtin: gtin.trim(), active: initial?.active ?? true }); }}>
+  const [boxesPerPallet, setBoxesPerPallet] = useState(initial?.boxesPerPallet ?? 64); const [netKgPerBox, setNetKgPerBox] = useState(initial?.netKgPerBox ?? 6.4); const [gtin, setGtin] = useState(initial?.gtin ?? ""); const [shelfLifeDays, setShelfLifeDays] = useState(initial?.shelfLifeDays ? String(initial.shelfLifeDays) : "");
+  return <form onSubmit={(event) => { event.preventDefault(); onSubmit({ sku: sku.trim().toUpperCase(), name: name.trim(), family: family.trim(), format, packSize: packSize.trim(), unitsPerBox, boxesPerPallet, netKgPerBox, gtin: gtin.trim(), shelfLifeDays: Number(shelfLifeDays) > 0 ? Math.round(Number(shelfLifeDays)) : undefined, active: initial?.active ?? true }); }}>
     <div className="form-grid">
       <Field label="SKU"><input required value={sku} onChange={(event) => setSku(event.target.value)} placeholder="GAZ-1L" /></Field>
       <Field label="Nombre del artículo"><input required value={name} onChange={(event) => setName(event.target.value)} placeholder="Gazpacho andaluz" /></Field>
@@ -216,6 +216,7 @@ export function ArticleForm({ initial, onCancel, onSubmit }: { initial?: Article
       <Field label="Cajas por palet estándar"><input required type="number" min="1" step="1" value={boxesPerPallet} onChange={(event) => setBoxesPerPallet(Number(event.target.value))} /></Field>
       <Field label="Peso neto de la caja (kg)"><input required type="number" min="0.01" step="0.01" value={netKgPerBox} onChange={(event) => setNetKgPerBox(Number(event.target.value))} /></Field>
       <Field label="GTIN (opcional)"><input value={gtin} onChange={(event) => setGtin(event.target.value)} placeholder="Código de producto" /></Field>
+      <Field label="Vida útil (días, opcional)"><input type="number" min="1" step="1" value={shelfLifeDays} onChange={(event) => setShelfLifeDays(event.target.value)} placeholder="Para caducidad del producto terminado" /></Field>
     </div>
     <div className="form-note">Cada caja contiene {unitsPerBox} envases · {boxesPerPallet} cajas por palet completo · {Number((netKgPerBox * boxesPerPallet).toFixed(1))} kg netos</div>
     <Actions onCancel={onCancel} label={initial ? "Guardar cambios" : "Guardar artículo"} />
