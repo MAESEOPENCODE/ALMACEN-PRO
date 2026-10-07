@@ -8,7 +8,7 @@ Repositorio objetivo: **ALMACEN-PRO**.
 
 ## Estado
 
-**Versión:** 1.0.0 · **Esquema local:** v6
+**Versión:** 15 · **Esquema local:** v15
 
 La aplicación funciona en navegador y puede instalarse como PWA. Actualmente los datos operativos se almacenan localmente en el dispositivo; la sincronización multiusuario con servidor queda preparada como siguiente etapa y no está simulada.
 
@@ -112,3 +112,34 @@ Consulta [docs/LOCAL.md](docs/LOCAL.md). La aplicación debe ejecutarse con Vite
 Repositorio recomendado: `ALMACEN-PRO`. El proyecto ya está configurado para publicarse como Project Site en `/ALMACEN-PRO/`.
 
 Tras activar **Settings → Pages → GitHub Actions** y hacer push a `main`, GitHub Actions generará y publicará la aplicación automáticamente.
+
+
+## Inventario alimentario v7
+
+Se añade un módulo de inventario de materias primas con recepción de lotes, lote interno/proveedor, caducidad, ubicación, cuarentena/liberación/bloqueo y ordenación FEFO. Los datos existentes se migran automáticamente desde versiones anteriores.
+
+## v11.1 · Fabricación Food & Sauce
+
+La aplicación incorpora un espacio específico de fabricación conectado con la trazabilidad:
+
+- Flujo por fases: preparación, pesaje, mezcla, cocción, enfriamiento, control, envasado, paletizado y liberación.
+- Pesadas reales por lote de materia prima, con tolerancias y desviaciones.
+- Los pesajes registrados generan consumos trazables en la orden.
+- Perfil automático de alérgenos desde receta + materias primas.
+- Registro de PCC/APPCC con límites y acciones correctivas.
+- Control de materiales de packaging por orden.
+- Migración automática de órdenes y datos del esquema v10 al v11.
+
+
+## v15 · Cierre operativo Food & Sauce
+
+- Aprovisionamiento conectado a MRP: necesidad → solicitud → recepción → lote en cuarentena → liberación.
+- Reservas FEFO consumidas y liberadas correctamente al registrar pesadas.
+- Fabricación con puertas de proceso: no se puede cerrar una OF incompleta ni liberar un lote con PCC/pesadas desviadas.
+- Al liberar calidad se generan automáticamente palets de producto terminado, SSCC y movimiento de fabricación.
+- Auditoría de recepciones y liberaciones.
+- Migración compatible con esquemas v1-v15.
+
+### Estado de producto
+
+**Candidata estable para pruebas en planta.** Antes de uso productivo se recomienda ejecutar la prueba integral con datos de prueba y validar el build en un entorno Node/pnpm con las dependencias instaladas.
