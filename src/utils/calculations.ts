@@ -85,7 +85,7 @@ export type ExpiryLevel = "ok" | "soon" | "urgent" | "expired";
 export function daysToExpiry(expiry?: string): number | null {
   if (!expiry) return null;
   const target = new Date(`${expiry.slice(0, 10)}T12:00:00`).getTime();
-  const base = new Date(`${new Date().toISOString().slice(0, 10)}T12:00:00`).getTime();
+  const base = new Date(`${(() => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`; })()}T12:00:00`).getTime();
   return Math.ceil((target - base) / 86_400_000);
 }
 

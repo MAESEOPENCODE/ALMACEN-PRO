@@ -2,7 +2,7 @@ export function makeId(prefix: string): string {
   return `${prefix}-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
 }
 
-export function nextDocument(prefix: "PED" | "PAL" | "CAR", existing: string[]): string {
+export function nextDocument(prefix: "PED" | "PAL" | "CAR" | "OF", existing: string[]): string {
   const year = new Date().getFullYear();
   if (prefix === "PED") {
     const marker = `${prefix}-${year}-`;
