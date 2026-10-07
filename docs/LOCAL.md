@@ -21,7 +21,7 @@ pnpm dev
 
 4. Abre:
 
-`http://localhost:3000/`
+`http://localhost:3000/ALMACEN-PRO/`
 
 También puedes usar:
 
@@ -37,6 +37,6 @@ pnpm build
 pnpm preview
 ```
 
-Después abre `http://localhost:3000/`.
+Después abre `http://localhost:3000/ALMACEN-PRO/`.
 
 > Nota: `file://.../index.html` no es un modo soportado para ejecutar la PWA completa. Para probar PWA, service worker y caché offline usa `pnpm dev` o `pnpm preview`.
